@@ -53,14 +53,14 @@ Mindset to absorb (and keep absorbing through Phase 3): you are not writing *tes
 
 Goal: touch every UVM component shape exactly once in a setting small enough to fit in your head. **Build incrementally** — each step should leave you with a runnable, passing test before moving on.
 
-DUT: synchronous parameterized FIFO, FWFT-style (read-data is valid whenever `!empty`; `rd_en` consumes the head).
+DUT (prerequisite, provided by Claude): synchronous parameterized FIFO, FWFT-style (read-data is valid whenever `!empty`; `rd_en` consumes the head). Lives at `fifo/dut/fifo.v`.
 
 ### Build layers (in order)
 
 | # | Layer | Files | What you learn |
 |---|---|---|---|
-| 1 | **RTL** (warmup) | `fifo/dut/fifo.v` | familiar territory — soft entry into the project's dev loop without new tools |
-| 2 | **Directed cocotb test** | `fifo/tb/test_fifo_directed.py`, `fifo/tb/Makefile` | cocotb wiring, signal access, clock generation, basic await idioms. No PyUVM yet. |
+| 1 | **Smoke test** | `fifo/tb/test_fifo_smoke.py` | tiniest cocotb test — clock, reset, one assert. Confirms toolchain wiring before investing real test logic. |
+| 2 | **Directed cocotb test** | `fifo/tb/test_fifo_directed.py` | cocotb wiring, signal access, clock generation, basic await idioms. No PyUVM yet. |
 | 3 | **PyUVM hello-world test** | `fifo/tb/test_fifo_uvm.py` | `uvm_test`, `run_phase`, raise/drop objections, `run_test()` entry point |
 | 4 | **Transaction + sequencer + driver + agent** | `fifo/tb/fifo_pkg.py` | seq_item API, driver `get_next_item`/`item_done` loop, sequencer-driver handshake |
 | 5 | **Monitor + analysis port** | (same) | passive sampling, broadcast pattern |
