@@ -59,7 +59,7 @@ DUT: synchronous parameterized FIFO, FWFT-style (read-data is valid whenever `!e
 
 | # | Layer | Files | What you learn |
 |---|---|---|---|
-| 1 | **RTL** | `fifo/dut/fifo.v` | (review — you already know this) |
+| 1 | **RTL** (warmup) | `fifo/dut/fifo.v` | familiar territory — soft entry into the project's dev loop without new tools |
 | 2 | **Directed cocotb test** | `fifo/tb/test_fifo_directed.py`, `fifo/tb/Makefile` | cocotb wiring, signal access, clock generation, basic await idioms. No PyUVM yet. |
 | 3 | **PyUVM hello-world test** | `fifo/tb/test_fifo_uvm.py` | `uvm_test`, `run_phase`, raise/drop objections, `run_test()` entry point |
 | 4 | **Transaction + sequencer + driver + agent** | `fifo/tb/fifo_pkg.py` | seq_item API, driver `get_next_item`/`item_done` loop, sequencer-driver handshake |
