@@ -1,51 +1,122 @@
-# Layer 1 — cocotb smoke test
+# Layer 1 — cocotb smoke test (beginner-friendly)
 
-Goal: write `fifo/tb/test_fifo_smoke.py` — the tiniest possible cocotb test that confirms the simulator, cocotb, the Makefile, and the DUT all wire up and that reset works. **One** `@cocotb.test()`, ~25 lines of Python.
+> Read every section in order. It's deliberately verbose — this is your first cocotb test ever.
 
-You're not verifying FIFO behavior here. You're verifying that the *plumbing* works before investing real test logic on top of it.
+## Goal
 
-## What to verify
+Write `fifo/tb/test_fifo_smoke.py` — one `@cocotb.test()` function that resets the DUT and confirms the FIFO comes up empty.
 
-After holding `rst_n` low for a couple of clock cycles and then releasing it high:
+## The five things you need to understand about cocotb
 
-- `empty == 1`
-- `full == 0`
+1. **A test is a coroutine.** You write `async def my_test(dut): ...` and decorate it with `@cocotb.test()`. cocotb runs it.
 
-That's it. One assert pair.
+2. **`dut` is your handle to the DUT.** `dut.<signal_name>.value = N` writes a signal. `dut.<signal_name>.value` reads it. Names match the Verilog port names exactly (`clk`, `rst_n`, `empty`, etc.).
 
-## In-scope cocotb APIs
+3. **Signal writes are queued.** This is the gotcha. When you do `dut.rst_n.value = 0`, the simulator doesn't actually see it yet — the write is buffered. It only gets applied the next time you `await` *anything* (a clock edge, a timer, etc.). So if you write a signal and then immediately read another signal, you're reading stale state. **Rule of thumb: after every write, `await` something before you read.**
 
-You need (and shouldn't need anything beyond):
+4. **Triggers make you wait.**
+   - `await RisingEdge(dut.clk)` — wait for the next rising edge of the clock.
+   - `await FallingEdge(dut.clk)` — wait for the next falling edge.
+   - `await Timer(N, unit="ns")` — wait N ns of simulation time.
 
-- `import cocotb`
-- `from cocotb.clock import Clock` — start a 10 ns clock with `cocotb.start_soon(Clock(dut.clk, 10, unit="ns").start())`
-- `from cocotb.triggers import RisingEdge` — `await RisingEdge(dut.clk)` to step a cycle
-- `dut.<signal>.value = N` to drive, `int(dut.<signal>.value)` to read
-- `@cocotb.test()` on an `async def` taking `dut`
-- `assert`
+5. **The Clock helper drives `clk` for you.** You start it once at the top of the test and forget about it. After this line, `clk` toggles 0/1/0/1/... forever in the background — **you do not drive it manually**:
+   ```python
+   cocotb.start_soon(Clock(dut.clk, 10, unit="ns").start())
+   ```
+   (`10` is the period in ns. `cocotb.start_soon` says "run this coroutine in the background.")
 
-## Pitfalls specific to this layer
+## The DUT in 30 seconds
 
-1. **Reset polarity**: `rst_n` is **active-low**. Drive `0` to assert, `1` to deassert.
-2. **Initial X**: before reset, all flops in the DUT are `x`. Driving inputs and waiting one edge of reset isn't enough — hold `rst_n=0` for ≥1 full clock cycle, *then* release.
-3. **Sampling immediately after the edge**: after `await RisingEdge(dut.clk)`, signals have just transitioned. If you check `empty` on the same `await` that releases reset, you might catch a stale value. Easiest fix: do one more `await RisingEdge(dut.clk)` before asserting.
-4. **`int(...)` wrap**: `dut.empty.value` is a cocotb `BinaryValue`, not a Python int. `dut.empty.value == 1` works but is fragile; `int(dut.empty.value) == 1` is safer.
+Look at `fifo/dut/fifo.v` for the port list. For this test you care about three signals:
+
+| Signal | Direction | Meaning |
+|---|---|---|
+| `clk` | in | clock (the Clock helper drives this) |
+| `rst_n` | in | **active-low** reset: 0 = reset asserted, 1 = normal operation |
+| `empty` | out | 1 when FIFO has no data, 0 otherwise |
+| `full` | out | 1 when FIFO is at capacity, 0 otherwise |
+
+After you assert reset (drive `rst_n=0`), hold it for a couple of cycles, then deassert (drive `rst_n=1`), the FIFO should be empty. So `empty=1` and `full=0`.
+
+## The recipe (do these in order)
+
+1. Start the clock (one line — see snippet below).
+2. Apply reset:
+   - a. Drive `rst_n = 0`.
+   - b. Wait two clock edges (so reset is held for ≥1 full cycle).
+   - c. Drive `rst_n = 1`.
+   - d. Wait one more clock edge (so the deassertion settles in the simulator).
+3. Read `dut.empty` and assert it matches the contract above.
+4. Read `dut.full` and assert it matches the contract above.
+
+That's the whole test — about 10 lines of body code.
+
+## Reference snippets — cocotb plumbing only
+
+You can copy these patterns. The *content* of your asserts is yours to write.
+
+Imports:
+```python
+import cocotb
+from cocotb.clock import Clock
+from cocotb.triggers import RisingEdge
+```
+
+Start the clock:
+```python
+cocotb.start_soon(Clock(dut.clk, 10, unit="ns").start())
+```
+
+Wait for a clock edge:
+```python
+await RisingEdge(dut.clk)
+```
+
+Drive a signal and let it propagate:
+```python
+dut.rst_n.value = 0
+await RisingEdge(dut.clk)   # <-- this is what makes the simulator apply the write
+```
+
+Read a signal as a Python int:
+```python
+int(dut.empty.value)
+```
+
+## What to assert
+
+After your reset sequence is done:
+
+- What value should `dut.empty` have? (Look at the contract table above.)
+- What value should `dut.full` have? (Same.)
+
+Write two `assert ... == ...` statements that check these. Use `int(dut.empty.value)` on the left side so you're comparing Python ints.
 
 ## How to run
 
-See [the README — Running tests](../../../README.md#running-tests). For just this layer, `make COCOTB_TEST_MODULES=test_fifo_smoke` will run only your file (the default in the Makefile is still `test_fifo_directed`, which doesn't exist yet).
+From `fifo/tb/`, with the venv active:
 
-Or update the Makefile's `COCOTB_TEST_MODULES ?= test_fifo_directed` default to `test_fifo_smoke` while you're working on this layer.
+```sh
+make COCOTB_TEST_MODULES=test_fifo_smoke
+```
 
-## Acceptance
+Acceptance: the last line of output reads `TESTS=1 PASS=1 FAIL=0`.
 
-- `make COCOTB_TEST_MODULES=test_fifo_smoke` ends with `TESTS=1 PASS=1 FAIL=0`.
+## Common errors and what they mean
 
-## Stretch (only if curious)
+- **`Cannot convert Logic('X') to int`** — the signal you read is `X` (unknown). For DUT outputs this almost always means reset wasn't applied properly: either you didn't `await` between driving `rst_n` and reading the output, or you didn't hold reset long enough.
 
-- Add a second `@cocotb.test()` that holds reset and confirms `empty==1` doesn't depend on `wr_en` being low first (i.e., reset dominates).
-- That's already getting into "directed test" territory — save it for Layer 2.
+- **`Cannot convert Logic('Z') to int`** — high-impedance, similar root cause to X for our DUT (uninitialized).
+
+- **Test hangs / no output** — somewhere you forgot to `await` and you're spinning. Ctrl-C, read the traceback.
+
+- **`AttributeError: ...has no attribute 'foo'`** — signal name mismatch. Compare your `dut.foo` to the Verilog port list.
+
+- **`assert int(dut.empty.value) == 0` fails with `1 != 0`** — your assertion has the polarity wrong. Re-read the contract.
 
 ## When you're ready
 
-Say "ready" and I'll review. I'll look for: idiom slips, missed pitfalls, anything that wouldn't scale to the directed tests in Layer 2.
+Save `fifo/tb/test_fifo_smoke.py`, run `make COCOTB_TEST_MODULES=test_fifo_smoke`, and either:
+
+- it passes — say "ready" and I'll review the code, or
+- it fails — paste the error and I'll point you at the issue without giving the fix.
